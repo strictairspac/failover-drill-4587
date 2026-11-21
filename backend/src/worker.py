@@ -4,8 +4,9 @@ from sqlalchemy import select
 from redis import Redis
 from src.config.database import Session
 from src.config.settings import REDIS_URL
-from src.models.entities import Drill
+from src.models.entities import Drill, Reconciliation
 from src.services.election import elect
+from src.services.reconciliation_processor import process_reconciliation
 redis = Redis.from_url(REDIS_URL)
 logging.basicConfig(level=logging.INFO)
 # Redis leadership lock ensures only one worker processes the durable DB queue.
@@ -26,6 +27,18 @@ while True:
                         job.status = 'failed'
                     db.commit()
                     logging.info('drill %s %s', job.id, job.status)
+                else:
+                    # 演练照常优先出结论；队列空闲时推进一个核对申请的一批。
+                    recon = db.scalar(select(Reconciliation).where(
+                        Reconciliation.status.in_(['queued', 'scanning', 'merging'])
+                    ).order_by(Reconciliation.id))
+                    if recon:
+                        try:
+                            process_reconciliation(db, recon.id)
+                            db.commit()
+                            logging.info('reconciliation %s advanced', recon.id)
+                        except Exception:
+                            db.rollback()
     except Exception:
         logging.exception('worker retry')
     time.sleep(1)

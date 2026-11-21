@@ -29,6 +29,9 @@ docker compose down --remove-orphans
 ## 算法口径
 输入为入队时冻结的节点与剧本快照。法定票数 floor(配置投票节点数/2)+1；可达票扣除不可达/已隔离/本次故障主节点；候选必须可达、有投票权、非主、未隔离且落后量不超过允许日志损失。新任期=max(节点任期)+1。所有安全条件成立时按日志位置降序、节点名升序确定候选；缺少旧主fencing、票数不足、未触发故障、任期不足或无合格候选均阻断。空节点、零投票节点、多个主节点计算失败并保存原因。结果含输入SHA256与模型版本，可重复计算。不会伪造真实集群共识证据。
 
+## 两班核对
+值班组核对两个班次的演练证据。申请时选择两个不重叠时段，系统只冻结申请瞬间状态为「已完成」的场次（演练照常出结论，队列不受影响，之后完成的场次不进入本次核对）。后台 worker 分批处理，每批最多读取100条候选证据；同名节点即使落在不同扫描批次，合并阶段也按节点名把两班场次两两配齐，配对保留双方当时的落后条数（lag_a、lag_b、lag_diff）。中断后凭 `reconciliations.cursor` 游标与 `reconciliation_batches` 批次台账恢复：重试过的批次不重复发布，已查到的配对顺序（merge_seq）保持不变。前端「两班核对」页可选择时段申请、按节点名筛选并翻页查看已配好的场次，状态显示排队/扫描/合并/已算齐及算齐时间。观察员（viewer）只读，操作员与管理员可申请。
+
 ## 工程
 |组件|技术|
 |---|---|
@@ -42,4 +45,4 @@ docker compose down --remove-orphans
 
 环境：COMPOSE_PROJECT_NAME控制隔离命名；FRONTEND_PORT/BACKEND_PORT/DB_PORT为端口；DB_PASSWORD为演示数据库密码；JWT_SECRET为签名密钥；SEED_DEMO=false关闭演示数据。命名卷db-data、redis-data、artifacts；reset时显式down -v删除数据。前端字体依赖Google Fonts，离线回退serif/sans-serif。模型是简化安全门禁，非完整Raft实现。MIT许可。
 
-枚举：角色在backend/src/constants/enums.py和frontend/src/constants/enums.js；任务状态同处定义，使用于models/entities.py、services/drill_service.py、worker.py、components/common/status.js；节点角色在schemas/node.py、pages/nodes.js。测试、截图与已知差异见批次test-artifacts/gb-4110/TESTING.md。
+枚举：角色在backend/src/constants/enums.py和frontend/src/constants/enums.js；任务状态同处定义，使用于models/entities.py、services/drill_service.py、worker.py、components/common/status.js；核对状态（queued/scanning/merging/completed/failed）与每批上限RECON_BATCH_LIMIT=100同在enums.py，使用于services/reconciliation_processor.py、reconciliations.py路由与pages/reconciliations.js；节点角色在schemas/node.py、pages/nodes.js。测试、截图与已知差异见批次test-artifacts/gb-4110/TESTING.md。
